@@ -155,6 +155,7 @@ class SnakeModel:
         return a
 
 class Snakebrain(tf.keras.Model):
+    '''Neural Network used to predict the movement for a snake'''
     def __init__(self):
         super(Snakebrain, self).__init__()
         self.model = Sequential()
@@ -162,6 +163,7 @@ class Snakebrain(tf.keras.Model):
         self.model.add(Dense(10, activation='relu'))
         self.model.add(Dense(4, activation= 'relu'))
         self.snake_name = " "
+        self.fitness_score = 0.0
     def prediction(self, NN_input):
         max = 0
         direction = None
@@ -214,91 +216,151 @@ class GameState(IntEnum):
     Paused = 2
     Ended = 3
 
-def choose_survivors(snakes, top_survival_rate, rand_survival_rate, num_snakes):
-    '''chooses the survivors for each generation by selecting the top peformers and a few random survivors 
-    top_survival_rate: decimal percentage indicating the percentage of top performers to survive
-    rand_survival_rate: percentage of random snakes to survive
-    snakes: list of snakes from previous generation in order of best to worst
-    num_snakes: number of snakes given to function
-    survivors contains top performers in the front and random survivors at the end'''
-    num_top_survivors = int(num_snakes*top_survival_rate)
-    num_rand_survivors = int(num_snakes * rand_survival_rate)
-    survivors = collections.deque()
-    for i in range(num_top_survivors):
-        survivors.append(snakes.popleft())
-    for i in range(num_rand_survivors):
-        survivors.append(rand.choice(snakes))
-    #print(survivors[0][0].name) #prints the name of the top performing snakebrain
-    return survivors
+class Genetic_alg:
+    def __init__(self, init_pop_size, generation_size, mutation_rate, percent_shift_mutation):
+        self.fitness_rank = collections.deque()
+        self.snake_brain_dict = {}
+        self.startingpop = self.Initial_pop(init_pop_size)
+        self.pop_size = init_pop_size
+        self.current_gen = self.startingpop
 
-def breed_generation(snakes, num_snakes_out):
-    for i in range(num_snakes_out):
-        mother = rand.choice(snakes)
-        father = rand.choice(snakes)
-        breed(mother, father)
+        # variables for choose survivors funct.
+        self.top_survival_rate = .2
+        self.rand_survival_rate = .1
 
-def breed(mother, father):
-    ''' merge two nueral networks into one by randomly choosing weights/baises from each parent NN'''
-    if mother != father or mother == father:
-        print(mother , father)
-        params = mother[0].get_weights()
-        fatherparams = father[0].get_weights()
-        print(params[0][0,0])
-        for layer in params:
-            print('yooooooooooooooo')
-            #print(layer)
-            for weights in layer: 
-                try:
-                    r = 0
-                    for row in weights:
-                        c = 0
-                        for col in weights:
-                        #print(weight)
-                            if True:
-                                params[0][r, c] =0
-                                c+=1
-                        r+=1
-                except TypeError:
-                    pass
-        print(params)
+        #variables for breed funct
+        self.generation_size = generation_size
 
-
-def mutate(Snake_NN, mutation_rate):
-    '''randomly alter the weights/ biases of a snake NN'''
-    pass
-
-if __name__ == "__main__":
-    #play of the game
-    fitness_rank = collections.deque()
-    snake_brain_dict = {}
-    i = 0
-    while(i<10):
-        brain = Snakebrain()
-        brain.snake_name = i
-        model = SnakeModel(10, 10)
+        #variables for mutate funct
+        self.mutation_rate = mutation_rate
+        self.percent_shift_mutation = percent_shift_mutation
+    def choose_survivors(self):
+        '''chooses the survivors for each generation by selecting the top peformers and a few random survivors 
+        top_survival_rate: decimal percentage indicating the percentage of top performers to survive
+        rand_survival_rate: percentage of random snakes to survive
+        snakes: list of snakes from previous generation in order of best to worst
+        num_snakes: number of snakes given to function
+        survivors contains top performers in the front and random survivors at the end'''
+        num_top_survivors = int(self.pop_size*self.top_survival_rate)
+        num_rand_survivors = int(self.pop_size * self.rand_survival_rate)
+        survivors = []
+        snakes = self.fitness_rank
         try:
-            while model.num_steps < 100:
-                model.direction = brain.prediction(model.Nump_input())
-                model.one_step()   
-        except GameOver:
-            pass
-        snake_brain_dict[i] = [brain, model.num_steps]
-        if i == 0:
-            fitness_rank.appendleft(snake_brain_dict[i]) 
-        else:
-            b=0
-            while True:
+            for i in range(num_top_survivors):
+                survivors.append(snakes.popleft())
+            for i in range(num_rand_survivors):
+                survivors.append(rand.choice(snakes))
+        except IndexError:
+            print("More survivors than snakes in generation")
+        #print("Top Performer:", survivors[0][0].name) #prints the name of the top performing snakebrain
+        print('Survivors:', survivors)
+        self.current_gen = survivors
+
+    def breed_generation(self):
+        print("Breeding...")
+        next_gen = []  #a list of snakes that heve been bred from the previous generation's snakes
+        chance_to_breed = []
+        for snake in self.current_gen:
+            chance_to_breed.append(snake[0].fitness_score)
+        for i in range(self.generation_size):
+            child = None
+            mother = rand.choices(self.current_gen, weights = chance_to_breed)[0] #chooses parents more likely to choose parents with a higher fitness score
+            father = rand.choices(self.current_gen, weights = chance_to_breed)[0]
+            child = breed(mother, father)
+            child = mutate(child, .05, .5)
+            child.snake_name = i
+            next_gen.append(child)
+        print("Next Generation:", next_gen)
+        self.current_gen = next_gen
+
+    def breed(mother, father):
+        ''' merge two nueral networks into one by randomly choosing weights/baises from each parent NN to pass onto the child NN
+        goes through weights and biases and flips a coin for each weight/baise to decide whether or not to inherit from mother or father'''
+        #print(mother , father)   debugging tool for finding mother and father 
+        child = Snakebrain()
+        params = mother[0].get_weights()
+        if mother != father:
+            fatherparams = father[0].get_weights()
+            for i, val in np.ndenumerate(params): #iterate through each layers weights/biases
+                for i2, val2 in np.ndenumerate(val): #iterates through each weight/biase array 
+                    if rand.randint(0,1) ==1:
+                        params[i[0]][i2] = fatherparams[i[0]][i2] #change weight from mother's to father's
+            child.set_weights(params)
+            return(child)
+        if mother == father:
+            child.set_weights(params)
+            return child
+
+    def mutate(self, Snake_NN):
+        '''randomly alter the weights/ biases of a snake NN'''
+        mutation_chance = int(self.mutation_rate*100)
+        params = Snake_NN.get_weights()
+        for i, val in np.ndenumerate(params): #iterate through each layers weights/biases
+                for i2, val2 in np.ndenumerate(val): #iterates through each weight/biase array 
+                    if rand.randint(0,100) <= mutation_chance:
+                        weight = params[i[0]][i2]
+                        shift = weight*self.percent_shift_mutation
+                        if rand.randint(0,1)==1:
+                            weight += shift
+                        else:
+                            weight -= shift
+                        params[i[0]][i2] = weight
+        Snake_NN.set_weights(params)
+        return Snake_NN
+
+    def fitness(snake_model):
+        steps = float(snake_model.num_steps)
+        food = float(snake_model.points_earned)
+        fitfunc = steps + (2**food + (food**2.1)*500) - ((food**1.2) * (.25*steps)**1.3)
+        return fitfunc 
+
+    def simulate_generation(self, step_limit):
+        '''simulates a generation of snakes on the model
+        list_of_snakes:list containing snakebrains
+        step_limit: number of timesteps to take before killing a snake manually'''
+        print("Simulating Generation...")
+        fitness_rank = collections.deque()
+        snake_brain_dict = {} 
+        for i, snake in enumerate(self.current_gen):
+            model = SnakeModel(10, 10)
+            #snake.snake_name = i
+            for i2 in range(step_limit):
                 try:
-                    if fitness_rank[b][1] < snake_brain_dict[i][1]:
-                        fitness_rank.insert(b, snake_brain_dict[i])
+                    model.direction = snake.prediction(model.Nump_input())
+                    model.one_step()
+                except GameOver:
+                    pass
+            snake.fitness_score = fitness(model)
+            snake_brain_dict[i] = [snake, snake.fitness_score]
+            if i == 0:
+                fitness_rank.appendleft(snake_brain_dict[i]) 
+            else:
+                b=0
+                while True:
+                    try:
+                        if fitness_rank[b][1] < snake_brain_dict[i][1]:
+                            fitness_rank.insert(b, snake_brain_dict[i])
+                            b+=1
+                            break
                         b+=1
+                    except IndexError:
+                        fitness_rank.append(snake_brain_dict[i])
                         break
-                    b+=1
-                except IndexError:
-                    fitness_rank.append(snake_brain_dict[i])
-                    break
-        i += 1
-    print(fitness_rank)
-    aaa =  choose_survivors(fitness_rank,.2, .1, 10)
-    print(aaa)
-    breed_generation(aaa, 1)
+        self.fitness_rank = fitness_rank
+        self.snake_brain_dict = snake_brain_dict
+
+    def Initial_pop(self, Initial_Pop_Size):
+        Gen1 = []
+        for i in range(Initial_Pop_Size):
+            brain = Snakebrain()
+            brain.snake_name = i
+            Gen1.append(brain)
+        return Gen1
+if __name__ == "__main__":
+    Nature = Genetic_alg(10,10,.01,.5)
+    Nature.simulate_generation(100)
+    Nature.choose_survivors()
+    Nature.breed_generation()
+    Nature.simulate_generation(100)
+    print(Nature.fitness_rank)
+    
