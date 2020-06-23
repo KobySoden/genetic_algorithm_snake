@@ -159,6 +159,7 @@ class SnakeModel:
         self.direction = None
         self.first_direction()
         #NN input 
+        self.snakeview_distance = 4
         self.distance_top_head = None
         self.distance_bottom_head = None
         self.distance_left_head = None
@@ -267,7 +268,65 @@ class SnakeModel:
         self.num_steps += 1
         self.NN_input = self.Nump_input()
         self.state = next_state
-    
+
+    def snake_scan(self):
+        head = self.snake[-1]
+        forward = np.array([0., 0., 0., 0.])
+        left = np.array([0., 0., 0., 0.])
+        right = np.array([0., 0., 0., 0.])
+        #print(self.direction, "Head:", head)
+
+        if self.direction == DirectionState.up:
+            for i in range(self.snakeview_distance):
+                if head[0]-(i+1) >= 0: 
+                    if self.state[head[0]-(i+1)][head[1]] == CellState.Snake:
+                        forward[i] = 1
+                if head[1]-(i+1) >= 0:
+                    if self.state[head[0]][head[1]-(i+1)] == CellState.Snake:
+                        left[i] = 1
+                if head[1]+(i+1) <= self.num_cols-1:
+                    if self.state[head[0]][head[1]+(i+1)] == CellState.Snake:
+                        right[i] = 1
+
+        if self.direction == DirectionState.down:
+            for i in range(self.snakeview_distance):
+                if head[0]+(i+1) <= self.num_rows-1: 
+                    if self.state[head[0]+(i+1)][head[1]] == CellState.Snake:
+                        forward[i] = 1
+                if head[1]-(i+1) >= 0:
+                    if self.state[head[0]][head[1]-(i+1)] == CellState.Snake:
+                        right[i] = 1
+                if head[1]+(i+1) <= self.num_cols-1:
+                    if self.state[head[0]][head[1]+(i+1)] == CellState.Snake:
+                        left[i] = 1
+        
+        if self.direction == DirectionState.left:
+            for i in range(self.snakeview_distance):
+                if head[1]-(i+1) >= 0: 
+                    if self.state[head[0]][head[1]-(i+1)] == CellState.Snake:
+                        forward[i] = 1
+                if head[0]-(i+1) >= 0: 
+                    if self.state[head[0]-(i+1)][head[1]] == CellState.Snake:
+                        right[i] = 1
+                if head[0]+(i+1) <= self.num_rows-1: 
+                    if self.state[head[0]+(i+1)][head[1]] == CellState.Snake:
+                        left[i] = 1
+
+        if self.direction == DirectionState.right:
+            for i in range(self.snakeview_distance):
+                if head[1]+(i+1) <= self.num_cols-1:
+                    if self.state[head[0]][head[1]+(i+1)] == CellState.Snake:
+                        forward[i] = 1
+                if head[0]-(i+1) >= 0: 
+                    if self.state[head[0]-(i+1)][head[1]] == CellState.Snake:
+                        left[i] = 1
+                if head[0]+(i+1) <= self.num_rows-1: 
+                    if self.state[head[0]+(i+1)][head[1]] == CellState.Snake:
+                        right[i] = 1
+
+        print(self.direction, forward, left, right)
+        return [forward, left, right]
+
     def Nump_input(self):
         '''sets snake vision and inputs into a  numpy array'''
         head = self.snake[-1]
@@ -311,7 +370,11 @@ class SnakeModel:
             print("food:", self.food_location)
         nump = np.array([self.distance_top_head,self.distance_top_tail, self.distance_left_head, self.distance_left_tail, self.distance_bottom_head, self.distance_bottom_tail, 
                         self.distance_right_head, self.distance_right_tail, self.distance_food_head, self.angle_food_head,self.points_earned])
-        direc = np.array([0., 0., 0., 0.])
+        direc = np.array([0., 0., 0., 0.]) #Direction neurons and
+        scan = self.snake_scan()
+        forward = scan[0]
+        left = scan[1]
+        right = scan[2]
         if self.direction == DirectionState.up:
             direc[0]=1
         if self.direction == DirectionState.down:
@@ -321,7 +384,10 @@ class SnakeModel:
         if self.direction == DirectionState.right:
             direc[3]=1
         nump = np.append(nump, direc)
-        nump = np.reshape(nump, (1,15), order = 'C')
+        nump = np.append(nump, forward)
+        nump = np.append(nump, left)
+        nump = np.append(nump, right)
+        nump = np.reshape(nump, (1,27), order = 'C')
         return nump
 
 class Snakebrain(tf.keras.Model):
@@ -329,7 +395,7 @@ class Snakebrain(tf.keras.Model):
     def __init__(self):
         super(Snakebrain, self).__init__()
         self.model = Sequential()
-        self.model.add(Dense(10, input_dim=15, activation='relu', use_bias= True, bias_initializer='glorot_uniform'))
+        self.model.add(Dense(10, input_dim=27, activation='relu', use_bias= True, bias_initializer='glorot_uniform'))
         self.model.add(Dense(10, activation='relu',use_bias= True, bias_initializer='glorot_uniform'))
         self.model.add(Dense(4, activation= 'relu',))
         self.snake_name = " "
@@ -506,8 +572,8 @@ class controller:
         self.NUM_COLS = 10
         self.model = None
         self.GameState = GameState.Initial
-        self.step_time_millis = 250
-        self.init_pop_size = 500
+        self.step_time_millis = 700
+        self.init_pop_size = 100
         self.generation_size = 100
         self.step_limit = 100
         self.genetic = Genetic_alg(self.init_pop_size, self.generation_size, .1, .2)
